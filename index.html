@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Rental PS - Multi Meja</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white p-5 font-sans">
+
+<h1 class="text-center text-2xl font-bold mb-6">Rental PS - Multi Meja</h1>
+
+<div class="max-w-5xl mx-auto space-y-6">
+
+  <div class="bg-gray-800 p-4 rounded flex justify-between items-center">
+    <h2 class="text-lg font-semibold">Total Pendapatan Hari Ini</h2>
+    <p id="totalRevenue" class="text-2xl font-bold text-green-400">Rp 0</p>
+  </div>
+
+  <section id="tablesSection" class="grid grid-cols-2 gap-4"></section>
+
+  <section class="bg-gray-800 p-4 rounded">
+    <div class="flex justify-between mb-2">
+      <h2 class="text-lg font-semibold">Riwayat</h2>
+      <button onclick="clearHistory()" class="text-red-400 text-sm">Hapus Riwayat</button>
+    </div>
+    <table class="w-full text-sm border border-gray-700">
+      <thead class="bg-gray-900">
+        <tr>
+          <th class="p-1 border border-gray-700">Meja</th>
+          <th class="p-1 border border-gray-700">PS</th>
+          <th class="p-1 border border-gray-700">Mulai</th>
+          <th class="p-1 border border-gray-700">Selesai</th>
+          <th class="p-1 border border-gray-700">Durasi</th>
+          <th class="p-1 border border-gray-700">Total</th>
+        </tr>
+      </thead>
+      <tbody id="historyTable"></tbody>
+    </table>
+  </section>
+
+  <button onclick="openManualModal()" class="bg-indigo-600 w-full p-3 rounded text-center font-semibold">Hitung Manual</button>
+
+</div>
+
+<div id="manualModal" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center p-4">
+  <div class="bg-gray-800 p-6 rounded w-full max-w-md space-y-4">
+    <h2 class="text-lg font-semibold text-center">Hitung Manual</h2>
+    <input id="mStart" type="time" class="bg-gray-700 p-2 rounded w-full" />
+    <input id="mEnd" type="time" class="bg-gray-700 p-2 rounded w-full" />
+    <select id="mType" class="bg-gray-700 p-2 rounded w-full">
+      <option value="PS4">PS4 (Rp 8000/jam)</option>
+      <option value="PS3">PS3 (Rp 6000/jam)</option>
+    </select>
+    <p id="mResult" class="text-green-400 font-semibold text-center"></p>
+    <div class="flex gap-2">
+      <button onclick="manualCalc()" class="bg-indigo-600 flex-1 p-2 rounded">Hitung</button>
+      <button onclick="closeManualModal()" class="bg-gray-600 flex-1 p-2 rounded">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const TABLES=[
+ {id:1,name:'Meja 1',type:'PS4',rate:8000},
+ {id:2,name:'Meja 2',type:'PS4',rate:8000},
+ {id:3,name:'Meja 3',type:'PS4',rate:8000},
+ {id:4,name:'Meja 4',type:'PS3',rate:6000},
+ {id:5,name:'Meja 5',type:'PS3',rate:6000}
+];
+
+let timers={},starts={};
+const KEY_HISTORY='hist_v1';
+
+function money(n){return'Rp '+n.toLocaleString('id-ID');}
+function fmt(t){return t.toTimeString().slice(0,5);}
+function clock(sec){const h=String(Math.floor(sec/3600)).padStart(2,'0');const m=String(Math.floor((sec%3600)/60)).padStart(2,'0');const s=String(sec%60).padStart(2,'0');return`${h}:${m}:${s}`;}
+
+function loadHist(){try{return JSON.parse(localStorage.getItem(KEY_HISTORY))||[]}catch{return[]}}
+function saveHist(h){localStorage.setItem(KEY_HISTORY,JSON.stringify(h))}
+function addHist(e){const h=loadHist();h.push(e);saveHist(h);renderHist();updateRevenue();}
+
+function clearHistory(){localStorage.removeItem(KEY_HISTORY);renderHist();updateRevenue();}
+
+function renderHist(){
+  const h=loadHist(),tb=document.getElementById('historyTable');
+  tb.innerHTML='';
+  h.slice().reverse().forEach(e=>{
+    tb.innerHTML+=`<tr>
+      <td class="p-1 border border-gray-700 text-center">${e.meja}</td>
+      <td class="p-1 border border-gray-700 text-center">${e.ps}</td>
+      <td class="p-1 border border-gray-700 text-center">${e.start}</td>
+      <td class="p-1 border border-gray-700 text-center">${e.end}</td>
+      <td class="p-1 border border-gray-700 text-center">${e.duration}</td>
+      <td class="p-1 border border-gray-700 text-center">${money(e.totalRaw)}</td>
+    </tr>`;
+  });
+}
+
+function updateRevenue(){
+  const h=loadHist();
+  const sum=h.reduce((a,b)=>a+b.totalRaw,0);
+  document.getElementById('totalRevenue').textContent=money(sum);
+}
+
+function renderTables(){
+  const c=document.getElementById('tablesSection');
+  c.innerHTML='';
+  TABLES.forEach(t=>{
+    c.innerHTML+=`
+    <div class="bg-gray-800 p-3 rounded">
+      <div>${t.name} (${t.type})<br><span class="text-gray-400 text-xs">Rp ${t.rate}/jam</span></div>
+      <div class="text-right mt-2">
+        <div id="clk-${t.id}" class="font-mono text-lg">00:00:00</div>
+        <div id="prc-${t.id}" class="text-indigo-300 font-bold">Rp 0</div>
+      </div>
+      <div class="mt-2 flex gap-2">
+        <button onclick="startMeja(${t.id})" id="start-${t.id}" class="bg-green-600 flex-1 py-1 rounded">Start</button>
+        <button onclick="stopMeja(${t.id})" id="stop-${t.id}" class="bg-red-600 flex-1 py-1 rounded hidden">Stop</button>
+      </div>
+    </div>`;
+  });
+}
+
+function startMeja(id){
+  if(starts[id])return;
+  starts[id]=Date.now();
+  document.getElementById('start-'+id).classList.add('hidden');
+  document.getElementById('stop-'+id).classList.remove('hidden');
+  timers[id]=setInterval(()=>tick(id),1000);
+}
+
+function tick(id){
+  const t=TABLES.find(x=>x.id===id);
+  const diff=Math.floor((Date.now()-starts[id])/1000);
+  document.getElementById('clk-'+id).textContent=clock(diff);
+  document.getElementById('prc-'+id).textContent=money(Math.ceil(diff/3600*t.rate));
+}
+
+function stopMeja(id){
+  if(!starts[id])return;
+  const t=TABLES.find(x=>x.id===id);
+  const end=Date.now(),start=starts[id];
+  clearInterval(timers[id]);delete timers[id];delete starts[id];
+  const diffMs=end-start; const min=Math.floor(diffMs/60000);
+  const h=Math.floor(min/60), m=min%60;
+  const total=Math.ceil(min/60*t.rate);
+  addHist({meja:t.name,ps:t.type,start:fmt(new Date(start)),end:fmt(new Date(end)),duration:`${h}j ${m}m`,totalRaw:total});
+  document.getElementById('start-'+id).classList.remove('hidden');
+  document.getElementById('stop-'+id).classList.add('hidden');
+  document.getElementById('clk-'+id).textContent='00:00:00';
+  document.getElementById('prc-'+id).textContent='Rp 0';
+}
+
+function openManualModal(){document.getElementById('manualModal').classList.remove('hidden');document.getElementById('manualModal').classList.add('flex');}
+function closeManualModal(){document.getElementById('manualModal').classList.add('hidden');}
+
+function manualCalc(){
+  const s=document.getElementById('mStart').value;
+  const e=document.getElementById('mEnd').value;
+  const t=document.getElementById('mType').value;
+  if(!s||!e)return alert("Isi waktu dulu");
+  const rate=(t==="PS4"?8000:6000);
+  const sd=new Date("2000-01-01 "+s), ed=new Date("2000-01-01 "+e);
+  let diff=ed-sd; if(diff<0) diff+=24*3600*1000;
+  const min=Math.floor(diff/60000), h=Math.floor(min/60), m=min%60;
+  const total=Math.ceil(min/60*rate);
+  document.getElementById('mResult').textContent=`Durasi: ${h}j ${m}m — Total: ${money(total)}`;
+  addHist({meja:"Manual",ps:t,start:s,end:e,duration:`${h}j ${m}m`,totalRaw:total});
+  updateRevenue();
+  renderHist();
+}
+
+renderTables();
+renderHist();
+updateRevenue();
+</script>
+
+</body>
+</html>
